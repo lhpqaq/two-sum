@@ -108,18 +108,33 @@ async function handleDataAPI(env, url, corsHeaders) {
 
 /**
  * 按粒度聚合数据 API
- * 支持按分钟、半小时、小时、天、月聚合
+ * 支持按 5 分钟、半小时、小时、天、月聚合
  */
 async function handleAggregatedAPI(env, url, corsHeaders) {
-  const granularity = url.searchParams.get('granularity') || 'hour'; // minute, halfhour, hour, day, month
+  const granularity = url.searchParams.get('granularity') || 'hour'; // fivemin, halfhour, hour, day, month
   const limit = parseInt(url.searchParams.get('limit')) || 168; // 默认限制
 
   let timeFormat, groupBy;
 
   switch (granularity) {
-    case 'minute':
-      // 按分钟聚合：格式为 "YYYY-MM-DD HH:MM"
-      timeFormat = "strftime('%Y-%m-%d %H:%M', datetime(timestamp/1000, 'unixepoch'))";
+    case 'fivemin':
+      // 按 5 分钟聚合：格式为 "YYYY-MM-DD HH:MM"
+      // 将分钟数归类到 00, 05, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55
+      timeFormat = `strftime('%Y-%m-%d %H:', datetime(timestamp/1000, 'unixepoch')) ||
+                    CASE
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 5 THEN '00'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 10 THEN '05'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 15 THEN '10'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 20 THEN '15'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 25 THEN '20'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 30 THEN '25'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 35 THEN '30'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 40 THEN '35'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 45 THEN '40'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 50 THEN '45'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 55 THEN '50'
+                      ELSE '55'
+                    END`;
       groupBy = timeFormat;
       break;
     case 'halfhour':
@@ -148,7 +163,7 @@ async function handleAggregatedAPI(env, url, corsHeaders) {
       groupBy = timeFormat;
       break;
     default:
-      return jsonResponse({ error: 'Invalid granularity. Use: minute, halfhour, hour, day, or month' }, corsHeaders, 400);
+      return jsonResponse({ error: 'Invalid granularity. Use: fivemin, halfhour, hour, day, or month' }, corsHeaders, 400);
   }
 
   const { results } = await env.DB.prepare(

@@ -232,7 +232,7 @@
         <div class="controls">
             <div class="control-group">
                 <span class="control-label">时间粒度：</span>
-                <button onclick="setGranularity('minute')" id="btn-minute">按分钟</button>
+                <button onclick="setGranularity('fivemin')" id="btn-fivemin">按 5 分钟</button>
                 <button onclick="setGranularity('halfhour')" id="btn-halfhour">按半小时</button>
                 <button onclick="setGranularity('hour')" id="btn-hour" class="active">按小时</button>
                 <button onclick="setGranularity('day')" id="btn-day">按天</button>
@@ -256,7 +256,7 @@
         // 配置
         const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
             ? 'http://localhost:8787'
-            : 'https://two-sum.YOUR-SUBDOMAIN.workers.dev';
+            : 'https://two-sum.two-sum.workers.dev';
 
         let chart;
         let currentGranularity = 'hour';
@@ -339,8 +339,8 @@
                 // 根据粒度设置限制
                 let limit;
                 switch (currentGranularity) {
-                    case 'minute':
-                        limit = 180; // 3 小时 * 60 分钟
+                    case 'fivemin':
+                        limit = 288; // 24 小时 * 12（每小时12个5分钟）
                         break;
                     case 'halfhour':
                         limit = 336; // 7 天 * 24 小时 * 2（每小时2个半小时）
@@ -396,8 +396,8 @@
             // 获取粒度标题
             let granularityTitle;
             switch (currentGranularity) {
-                case 'minute':
-                    granularityTitle = '按分钟';
+                case 'fivemin':
+                    granularityTitle = '按 5 分钟';
                     break;
                 case 'halfhour':
                     granularityTitle = '按半小时';
