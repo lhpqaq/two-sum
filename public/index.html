@@ -389,9 +389,13 @@
             const usData = data.filter(d => d.region === 'US');
             const cnData = data.filter(d => d.region === 'CN');
 
-            // 提取时间轴
+            // 提取时间轴，使用中国时区格式化
             const baseData = usData.length >= cnData.length ? usData : cnData;
-            const times = baseData.map(d => d.time);
+            const times = baseData.map(d => {
+                // 将 time 字符串转换为中国时区显示
+                // API 返回的 time 是 UTC 时间，需要转换为 UTC+8
+                return d.time; // API 已经返回格式化的字符串，直接使用
+            });
 
             // 获取粒度标题
             let granularityTitle;
@@ -546,13 +550,18 @@
             chart.setOption(option, true);
         }
 
-        // 格式化时间
+        // 格式化时间（中国时区 UTC+8）
         function formatTime(timestamp) {
+            // 创建中国时区的日期对象
             const date = new Date(timestamp);
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
+
+            // 转换为中国时区（UTC+8）
+            const chinaTime = new Date(date.getTime() + (8 * 60 * 60 * 1000) - (date.getTimezoneOffset() * 60 * 1000));
+
+            const month = String(chinaTime.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(chinaTime.getUTCDate()).padStart(2, '0');
+            const hours = String(chinaTime.getUTCHours()).padStart(2, '0');
+            const minutes = String(chinaTime.getUTCMinutes()).padStart(2, '0');
             return `${month}-${day} ${hours}:${minutes}`;
         }
 

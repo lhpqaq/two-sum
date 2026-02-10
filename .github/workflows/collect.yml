@@ -2,9 +2,11 @@ name: LeetCode Data Collector
 
 on:
   schedule:
-    # 每分钟运行一次
-    - cron: '* * * * *'
+    # 每 5 分钟运行一次（GitHub Actions 的最小间隔）
+    - cron: '*/5 * * * *'
   workflow_dispatch:  # 支持手动触发
+  push:
+    branches: [ main, master ]  # 推送代码时也运行一次（用于测试）
 
 jobs:
   collect:
