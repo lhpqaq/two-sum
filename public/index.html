@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeetCode Two-Sum 实时在线人数监控</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .stat-card.us {
+            background: linear-gradient(135deg, #5470C6 0%, #3b5999 100%);
+        }
+
+        .stat-card.cn {
+            background: linear-gradient(135deg, #91CC75 0%, #73a855 100%);
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+
+        .stat-time {
+            font-size: 0.75em;
+            opacity: 0.8;
+            margin-top: 8px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 0.95em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button.active {
+            background: #667eea;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #chart {
+            width: 100%;
+            height: 600px;
+            margin-bottom: 20px;
+        }
+
+        .footer {
+            text-align: center;
+            color: #999;
+            font-size: 0.85em;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #fcc;
+        }
+
+        .info {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #90caf9;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+
+            #chart {
+                height: 400px;
+            }
+
+            .stat-value {
+                font-size: 2em;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .control-group {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 LeetCode Two-Sum 在线人数监控</h1>
+            <p class="subtitle">实时追踪全球最热门算法题的刷题人数</p>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card us">
+                <div class="stat-label">🌍 国际区 (US)</div>
+                <div class="stat-value" id="us-count">--</div>
+                <div class="stat-time" id="us-time">加载中...</div>
+            </div>
+            <div class="stat-card cn">
+                <div class="stat-label">🇨🇳 中国区 (CN)</div>
+                <div class="stat-value" id="cn-count">--</div>
+                <div class="stat-time" id="cn-time">加载中...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">📈 数据点数</div>
+                <div class="stat-value" id="data-points">--</div>
+                <div class="stat-time" id="update-time">等待更新</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <span class="control-label">时间粒度：</span>
+                <button onclick="setGranularity('minute')" id="btn-minute">按分钟</button>
+                <button onclick="setGranularity('halfhour')" id="btn-halfhour">按半小时</button>
+                <button onclick="setGranularity('hour')" id="btn-hour" class="active">按小时</button>
+                <button onclick="setGranularity('day')" id="btn-day">按天</button>
+                <button onclick="setGranularity('month')" id="btn-month">按月</button>
+            </div>
+            <div class="control-group">
+                <button onclick="fetchData()" id="btn-refresh">🔄 刷新</button>
+            </div>
+        </div>
+
+        <div id="message"></div>
+        <div id="chart"></div>
+
+        <div class="footer">
+            <p>数据每分钟自动采集 | Powered by Cloudflare Workers + D1 + Pages</p>
+            <p>项目开源于 GitHub</p>
+        </div>
+    </div>
+
+    <script>
+        // 配置
+        const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:8787'
+            : 'https://two-sum.YOUR-SUBDOMAIN.workers.dev';
+
+        let chart;
+        let currentGranularity = 'hour';
+        let autoRefreshInterval;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            chart = echarts.init(document.getElementById('chart'));
+            window.addEventListener('resize', () => chart.resize());
+
+            // 首次加载
+            fetchData();
+            fetchLatest();
+
+            // 自动刷新（每 60 秒）
+            autoRefreshInterval = setInterval(() => {
+                fetchData();
+                fetchLatest();
+            }, 60000);
+        });
+
+        // 设置时间粒度
+        function setGranularity(granularity) {
+            currentGranularity = granularity;
+
+            // 更新按钮状态
+            document.querySelectorAll('.control-group button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`btn-${granularity}`).classList.add('active');
+
+            fetchData();
+        }
+
+        // 获取最新数据
+        async function fetchLatest() {
+            try {
+                const res = await fetch(`${API_URL}/api/latest`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+
+                if (data.US) {
+                    document.getElementById('us-count').textContent = data.US.count.toLocaleString();
+                    document.getElementById('us-time').textContent = formatTime(data.US.timestamp);
+                } else {
+                    document.getElementById('us-count').textContent = '暂无';
+                    document.getElementById('us-time').textContent = '采集失败';
+                }
+
+                if (data.CN) {
+                    document.getElementById('cn-count').textContent = data.CN.count.toLocaleString();
+                    document.getElementById('cn-time').textContent = formatTime(data.CN.timestamp);
+                } else {
+                    document.getElementById('cn-count').textContent = '暂无';
+                    document.getElementById('cn-time').textContent = '等待数据';
+                }
+
+            } catch (error) {
+                console.error('Error fetching latest:', error);
+            }
+        }
+
+        // 获取历史数据
+        async function fetchData() {
+            const btn = document.getElementById('btn-refresh');
+            btn.disabled = true;
+            btn.textContent = '⏳ 加载中...';
+
+            chart.showLoading({
+                text: '加载数据中...',
+                color: '#667eea',
+                textColor: '#000',
+                maskColor: 'rgba(255, 255, 255, 0.8)'
+            });
+
+            document.getElementById('message').innerHTML = '';
+
+            try {
+                // 根据粒度设置限制
+                let limit;
+                switch (currentGranularity) {
+                    case 'minute':
+                        limit = 180; // 3 小时 * 60 分钟
+                        break;
+                    case 'halfhour':
+                        limit = 336; // 7 天 * 24 小时 * 2（每小时2个半小时）
+                        break;
+                    case 'hour':
+                        limit = 168; // 7 天 * 24 小时
+                        break;
+                    case 'day':
+                        limit = 90; // 90 天
+                        break;
+                    case 'month':
+                        limit = 24; // 24 个月
+                        break;
+                }
+
+                const res = await fetch(`${API_URL}/api/aggregated?granularity=${currentGranularity}&limit=${limit}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+
+                const data = await res.json();
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    showMessage('暂无数据，请等待数据采集...', 'info');
+                    chart.hideLoading();
+                    return;
+                }
+
+                renderChart(data);
+
+                // 更新统计
+                document.getElementById('data-points').textContent = data.length.toLocaleString();
+                document.getElementById('update-time').textContent = '刚刚更新';
+
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                showMessage(`数据加载失败: ${error.message}`, 'error');
+            } finally {
+                chart.hideLoading();
+                btn.disabled = false;
+                btn.textContent = '🔄 刷新';
+            }
+        }
+
+        // 渲染图表
+        function renderChart(data) {
+            // 数据分组
+            const usData = data.filter(d => d.region === 'US');
+            const cnData = data.filter(d => d.region === 'CN');
+
+            // 提取时间轴
+            const baseData = usData.length >= cnData.length ? usData : cnData;
+            const times = baseData.map(d => d.time);
+
+            // 获取粒度标题
+            let granularityTitle;
+            switch (currentGranularity) {
+                case 'minute':
+                    granularityTitle = '按分钟';
+                    break;
+                case 'halfhour':
+                    granularityTitle = '按半小时';
+                    break;
+                case 'hour':
+                    granularityTitle = '按小时';
+                    break;
+                case 'day':
+                    granularityTitle = '按天';
+                    break;
+                case 'month':
+                    granularityTitle = '按月';
+                    break;
+            }
+
+            // 配置图表
+            const option = {
+                title: {
+                    text: `LeetCode Two-Sum 在线人数趋势（${granularityTitle}）`,
+                    left: 'center',
+                    textStyle: { fontSize: 16 }
+                },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' },
+                    formatter: function(params) {
+                        let html = `<strong>${params[0].axisValue}</strong><br/>`;
+                        params.forEach(item => {
+                            const dataItem = item.seriesName.includes('US') ?
+                                usData.find(d => d.time === item.axisValue) :
+                                cnData.find(d => d.time === item.axisValue);
+
+                            if (dataItem) {
+                                html += `${item.marker} ${item.seriesName}: <strong>${Math.round(item.value)}</strong> 人<br/>`;
+                                html += `<span style="color:#999;font-size:12px">  └ 范围: ${dataItem.min_count} - ${dataItem.max_count}</span><br/>`;
+                            }
+                        });
+                        return html;
+                    }
+                },
+                legend: {
+                    data: ['国际区 (US)', '中国区 (CN)'],
+                    top: 35
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '15%',
+                    containLabel: true
+                },
+                dataZoom: [
+                    {
+                        type: 'slider',
+                        start: 0,
+                        end: 100,
+                        height: 20,
+                        bottom: 30
+                    },
+                    {
+                        type: 'inside',
+                        start: 0,
+                        end: 100
+                    }
+                ],
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: times,
+                    axisLabel: {
+                        rotate: 45,
+                        interval: Math.floor(times.length / 10) || 0
+                    }
+                },
+                yAxis: [
+                    {
+                        type: 'value',
+                        name: '国际区人数',
+                        position: 'left',
+                        scale: true,
+                        axisLine: {
+                            show: true,
+                            lineStyle: { color: '#5470C6' }
+                        },
+                        axisLabel: {
+                            formatter: '{value}'
+                        },
+                        splitLine: {
+                            lineStyle: { type: 'dashed' }
+                        }
+                    },
+                    {
+                        type: 'value',
+                        name: '中国区人数',
+                        position: 'right',
+                        scale: true,
+                        axisLine: {
+                            show: true,
+                            lineStyle: { color: '#91CC75' }
+                        },
+                        axisLabel: {
+                            formatter: '{value}'
+                        },
+                        splitLine: { show: false }
+                    }
+                ],
+                series: [
+                    {
+                        name: '国际区 (US)',
+                        type: 'line',
+                        yAxisIndex: 0,
+                        data: usData.map(d => Math.round(d.avg_count)),
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: {
+                            width: 2,
+                            color: '#5470C6'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(84, 112, 198, 0.4)' },
+                                { offset: 1, color: 'rgba(84, 112, 198, 0.1)' }
+                            ])
+                        }
+                    },
+                    {
+                        name: '中国区 (CN)',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: cnData.map(d => Math.round(d.avg_count)),
+                        showSymbol: false,
+                        smooth: true,
+                        lineStyle: {
+                            width: 2,
+                            color: '#91CC75'
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(145, 204, 117, 0.4)' },
+                                { offset: 1, color: 'rgba(145, 204, 117, 0.1)' }
+                            ])
+                        }
+                    }
+                ]
+            };
+
+            chart.setOption(option, true);
+        }
+
+        // 格式化时间
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            const className = type === 'error' ? 'error' : 'info';
+            document.getElementById('message').innerHTML =
+                `<div class="${className}">${message}</div>`;
+        }
+    </script>
+</body>
+</html>
