@@ -4,6 +4,7 @@
  * 1. 定时采集 US 和 CN 区的在线人数（Cron）
  * 2. 提供 API 给前端查询历史数据（Fetch）
  */
+import getOnlineCount from "./collector";
 
 export default {
   /**
@@ -49,14 +50,6 @@ export default {
         return await handlePushAPI(request, env, corsHeaders);
       }
 
-      // 手动触发采集（已废弃，Worker 不支持 WebSocket 客户端）
-      if (url.pathname === "/api/collect") {
-        return jsonResponse({
-          error: "Deprecated",
-          message: "请使用独立的采集脚本：node collector.js"
-        }, corsHeaders, 410);
-      }
-
       // 默认响应
       return jsonResponse({
         name: "LeetCode Two-Sum Monitor API",
@@ -65,7 +58,7 @@ export default {
           "/api/data": "获取历史数据（支持 ?hours=24 参数）",
           "/api/latest": "获取最新数据",
           "/api/stats": "获取统计信息",
-          "/api/collect": "手动触发数据采集"
+          "/api/aggregated": "获取按粒度聚合的数据（支持 ?granularity=fivemin|halfhour|hour|day|month 参数）",
         }
       }, corsHeaders);
 
@@ -79,15 +72,17 @@ export default {
   },
 
   /**
-   * 定时任务处理器（已废弃）
+   * 定时任务处理器
    * 注意：由于 Workers 不支持 WebSocket 客户端，定时任务已移至外部采集脚本
    */
   async scheduled(event, env, ctx) {
     console.log("Cron triggered at:", new Date(event.scheduledTime).toISOString());
     console.log("Note: Data collection is now handled by external collector script");
     // 可以在这里添加其他定时任务，如数据清理等
+    ctx.waitUntil(collectDataCron(env));
   }
 };
+
 
 /**
  * 获取历史数据 API
@@ -112,53 +107,57 @@ async function handleDataAPI(env, url, corsHeaders) {
  */
 async function handleAggregatedAPI(env, url, corsHeaders) {
   const granularity = url.searchParams.get('granularity') || 'hour'; // fivemin, halfhour, hour, day, month
-  const limit = parseInt(url.searchParams.get('limit')) || 168; // 默认限制
+  const limit = parseInt(url.searchParams.get("limit")) || 336; // 默认限制
+
+  if (limit <= 0 || limit > 336 * 2) {
+    return jsonResponse({ error: 'Invalid limit. Use a value between 1 and 336' }, corsHeaders, 400);
+  }
 
   let timeFormat, groupBy;
 
   switch (granularity) {
     case 'fivemin':
-      // 按 5 分钟聚合：格式为 "YYYY-MM-DD HH:MM"（中国时区 UTC+8）
+      // 按 5 分钟聚合：格式为 "YYYY-MM-DD HH:MM"（UTC）
       // 将分钟数归类到 00, 05, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55
-      timeFormat = `strftime('%Y-%m-%d %H:', datetime(timestamp/1000, 'unixepoch', '+8 hours')) ||
+      timeFormat = `strftime('%Y-%m-%d %H:', datetime(timestamp/1000, 'unixepoch')) ||
                     CASE
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 5 THEN '00'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 10 THEN '05'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 15 THEN '10'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 20 THEN '15'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 25 THEN '20'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 30 THEN '25'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 35 THEN '30'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 40 THEN '35'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 45 THEN '40'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 50 THEN '45'
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 55 THEN '50'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 5 THEN '00'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 10 THEN '05'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 15 THEN '10'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 20 THEN '15'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 25 THEN '20'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 30 THEN '25'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 35 THEN '30'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 40 THEN '35'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 45 THEN '40'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 50 THEN '45'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 55 THEN '50'
                       ELSE '55'
                     END`;
       groupBy = timeFormat;
       break;
     case 'halfhour':
-      // 按半小时聚合：格式为 "YYYY-MM-DD HH:00" 或 "YYYY-MM-DD HH:30"（中国时区）
-      timeFormat = `strftime('%Y-%m-%d %H:', datetime(timestamp/1000, 'unixepoch', '+8 hours')) ||
+      // 按半小时聚合：格式为 "YYYY-MM-DD HH:00" 或 "YYYY-MM-DD HH:30"（UTC）
+      timeFormat = `strftime('%Y-%m-%d %H:', datetime(timestamp/1000, 'unixepoch')) ||
                     CASE
-                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch', '+8 hours')) AS INTEGER) < 30 THEN '00'
+                      WHEN CAST(strftime('%M', datetime(timestamp/1000, 'unixepoch')) AS INTEGER) < 30 THEN '00'
                       ELSE '30'
                     END`;
       groupBy = timeFormat;
       break;
     case 'hour':
-      // 按小时聚合：格式为 "YYYY-MM-DD HH:00"（中国时区）
-      timeFormat = "strftime('%Y-%m-%d %H:00', datetime(timestamp/1000, 'unixepoch', '+8 hours'))";
+      // 按小时聚合：格式为 "YYYY-MM-DD HH:00"（UTC）
+      timeFormat = "strftime('%Y-%m-%d %H:00', datetime(timestamp/1000, 'unixepoch'))";
       groupBy = timeFormat;
       break;
     case 'day':
-      // 按天聚合：格式为 "YYYY-MM-DD"（中国时区）
-      timeFormat = "strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', '+8 hours'))";
+      // 按天聚合：格式为 "YYYY-MM-DD"（UTC）
+      timeFormat = "strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch'))";
       groupBy = timeFormat;
       break;
     case 'month':
-      // 按月聚合：格式为 "YYYY-MM"（中国时区）
-      timeFormat = "strftime('%Y-%m', datetime(timestamp/1000, 'unixepoch', '+8 hours'))";
+      // 按月聚合：格式为 "YYYY-MM"（UTC）
+      timeFormat = "strftime('%Y-%m', datetime(timestamp/1000, 'unixepoch'))";
       groupBy = timeFormat;
       break;
     default:
@@ -226,64 +225,129 @@ async function handleStatsAPI(env, corsHeaders) {
   }, corsHeaders);
 }
 
+
 /**
- * 处理数据推送 API（接收来自采集脚本的数据）
+ * 推送数据到数据库（带超时和重试）
+ * @param {object} env - 环境变量
+ * @param {Array} records - 数据记录
+ * @param {number} timeoutMs - 超时时间（毫秒）
+ * @param {number} maxRetries - 最大重试次数
+ * @returns {Promise<{success: boolean, saved: number, failed: number}>}
  */
-async function handlePushAPI(request, env, corsHeaders) {
-  try {
-    // 验证 API Key
-    const apiKey = request.headers.get('X-API-Key');
-    // 注意：在生产环境应该使用 Worker Secrets
-    const expectedKey = env.API_KEY || 'your-secret-key-here';
+async function pushToDB(env, records, timeoutMs = 5000, maxRetries = 3) {
+  const RETRY_DELAY_MS = 1000;
+  let saved = 0;
+  let failed = 0;
 
-    if (apiKey !== expectedKey) {
-      return jsonResponse({ error: 'Unauthorized' }, corsHeaders, 401);
-    }
+  for (const record of records) {
+    const { region, count, timestamp } = record;
 
-    // 解析请求体
-    const body = await request.json();
-    const { records } = body;
+    let inserted = false;
 
-    if (!Array.isArray(records) || records.length === 0) {
-      return jsonResponse({ error: 'Invalid data format' }, corsHeaders, 400);
-    }
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
 
-    // 写入数据库
-    const promises = [];
-    for (const record of records) {
-      const { region, count, timestamp } = record;
+      try {
+        // 添加超时控制
+        await Promise.race([
+          env.DB.prepare(
+            "INSERT INTO records (region, count, timestamp) VALUES (?, ?, ?)"
+          )
+            .bind(region, count, timestamp)
+            .run(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout")), timeoutMs)
+          ),
+        ]);
 
-      if (!region || typeof count !== 'number' || !timestamp) {
-        continue;
+        console.log(
+          `[pushToDB] ✅ 保存成功: ${region} = ${count} at ${new Date(timestamp).toISOString()}`
+        );
+        saved++;
+        inserted = true;
+        break; // 成功，跳出重试循环
+
+      } catch (error) {
+        console.error(`[pushToDB] ❌ 错误: ${error.message}`);
+
+        if (attempt < maxRetries) {
+          console.log(`[pushToDB] 等待 ${RETRY_DELAY_MS}ms 后重试...`);
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        }
       }
-
-      console.log(`Saving: ${region} = ${count} at ${new Date(timestamp).toISOString()}`);
-
-      promises.push(
-        env.DB.prepare("INSERT INTO records (region, count, timestamp) VALUES (?, ?, ?)")
-          .bind(region, count, timestamp).run()
-      );
     }
 
-    await Promise.all(promises);
-
-    return jsonResponse({
-      success: true,
-      saved: promises.length,
-      message: `Successfully saved ${promises.length} records`
-    }, corsHeaders);
-
-  } catch (error) {
-    console.error('Error in handlePushAPI:', error);
-    return jsonResponse({
-      error: 'Internal Server Error',
-      message: error.message
-    }, corsHeaders, 500);
+    if (!inserted) {
+      console.error(`[pushToDB] ❌ [${region}] 所有 ${maxRetries} 次尝试均失败`);
+      failed++;
+    }
   }
+
+  console.log(`[pushToDB] 完成: 成功 ${saved} 条, 失败 ${failed} 条`);
+  return { success: failed === 0, saved, failed };
 }
 
-// WebSocket 采集逻辑已移至 collector.js
-// Workers 不支持作为 WebSocket 客户端
+/**
+ * 定时任务：并发获取 US 和 CN 两个地区的在线人数（带重试和超时）
+ * @param {number} timeoutMs - 超时时间（毫秒）
+ * @param {number} maxRetries - 每个地区最大重试次数
+ * @returns {Promise<{US: number|null, CN: number|null}>}
+ */
+async function collectDataCron(env, timeoutMs = 30000, maxRetries = 3) {
+  const RETRY_DELAY_MS = 1000;
+
+  async function fetchWithRetry(region, env) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (attempt > 1) {
+        console.log(`\n[${region}] --- 触发重试 ---`);
+      }
+
+      try {
+        const count = await Promise.race([
+          getOnlineCount(region, env),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout")), timeoutMs),
+          ),
+        ]);
+
+        if (count !== null) {
+          return count;
+        }
+
+        console.warn(`[${region}] ⚠️ 返回空数据`);
+      } catch (error) {
+        console.error(`[${region}] ❌ 错误: ${error.message}`);
+      }
+
+      if (attempt < maxRetries) {
+        console.log(`[${region}] 等待 ${RETRY_DELAY_MS}ms 后重试...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
+
+    console.error(`[${region}] ❌ 所有 ${maxRetries} 次尝试均失败`);
+    return null;
+  }
+
+  const [usCount, cnCount] = await Promise.all([
+    fetchWithRetry("US", env),
+    fetchWithRetry("CN", env),
+  ]);
+
+  let records = [];
+  if (usCount !== null) {
+    records.push({ region: "US", count: usCount, timestamp: Date.now() });
+  } else {
+    console.error("[US] ❌ 未能采集到数据");
+  }
+  if (cnCount !== null) {
+    records.push({ region: "CN", count: cnCount, timestamp: Date.now() });
+  } else {
+    console.error("[CN] ❌ 未能采集到数据");
+  }
+
+  await pushToDB(env, records);
+  
+}
 
 /**
  * 辅助函数：返回 JSON 响应
